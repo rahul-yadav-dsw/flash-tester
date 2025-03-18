@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-deployment
+  # namespace: flask
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flask-app
+  template:
+    metadata:
+      labels:
+        app: flask-app
+    spec:
+      containers:
+      - name: flask-container
+        image: rahul8141/helloworld-app:nom
+        # At the start i thought using this probe would be a good idea but it was causing the pods to restart again and again, but
+        # this is a good way to check if the pod is ready to serve the traffic or not
+        # to make it work properly we should when you have alot of traffic then you should have a delay of 30 seconds and also have aleat 3 replicas ready
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 3
+          failureThreshold: 6
+          successThreshold: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 3
+          failureThreshold: 6
+        resources:
+          requests:
+            memory: "600Mi"
+            cpu: "250m"
+          limits:
+            memory: "600Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DB_HOST
+          value: "acid-minimal-cluster" # Service name for the master
+        - name: DB_HOST_READER
+          value: "acid-minimal-cluster-repl" # Service name for the reader
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          value: "postgres"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: "postgres.acid-minimal-cluster.credentials.postgresql.acid.zalan.do"
+              key: "username"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: "postgres.acid-minimal-cluster.credentials.postgresql.acid.zalan.do"
+              key: "password"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-service
+  # namespace: flask
+spec:
+  selector:
+    app: flask-app
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8080
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: flask-vs
+  # namespace: flask
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - flask-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /helloworld
+    - uri:
+        prefix: /requests
+    route:
+    - destination:
+        port:
+          number: 8000
+        host: flask-service
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: flask-gateway
+  # namespace: flask
+spec:
+  # The selector matches the ingress gateway pod labels.
+  # If you installed Istio using Helm following the standard documentation, this would be "istio=ingress"
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"

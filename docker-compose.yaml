@@ -1,0 +1,31 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+    environment:
+      DB_HOST: db
+      DB_HOST_READER: db
+      DB_PORT: 3306
+      DB_NAME: flaskdb
+      DB_USER: postgres
+      DB_PASSWORD: password
+  db:
+    image: mysql
+    ports:
+      - "3306"
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: flaskdb
+      MYSQL_USER: postgres
+      MYSQL_PASSWORD: password
+    healthcheck:
+        test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+        timeout: 20s
+        retries: 10
+    # volumes:
+    #   - ./data/db:/var/lib/postgresql/data
